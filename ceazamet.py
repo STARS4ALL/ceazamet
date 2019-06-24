@@ -186,7 +186,7 @@ def sendSensorData(obj_sensor_info, df_sensor_data):
                 {
                     "measurement": "ceazamet",
                     "tags": obj_sensor_info,
-                    "time": int(datetime.datetime.now().strftime('%s')),
+                    #"time": int(datetime.datetime.now().strftime('%s')), 
                     "fields": {
                         "min": float(df_sensor_data['min'].values[0]),
                         "prom": float(df_sensor_data['prom'].values[0]),
