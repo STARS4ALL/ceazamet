@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import requests
+from lxml import etree
 import os
 import csv
 import copy
@@ -12,7 +14,7 @@ import argparse
 import threading
 import pandas as pd
 from pytz import timezone
-from tzwhere import tzwhere
+# from tzwhere import tzwhere
 from influxdb import InfluxDBClient
 from influxdb.client import InfluxDBClientError
 
@@ -22,10 +24,16 @@ INFLUXDB_USER = os.environ.get('CEAZAMET_INFLUXDB_USER', 'root')
 INFLUXDB_PASSWORD = os.environ.get('CEAZAMET_INFLUXDB_PASSWORD', 'root')
 INFLUXDB_DBNAME = os.environ.get('CEAZAMET_INFLUXDB_DBNAME', 'ceazamet')
 
-CEAZAMET_WS = 'http://www.ceazamet.cl/ws/pop_ws.php'
+CEAZAMET_URL = 'http://www.ceazamet.cl'
+CEAZAMET_WS_1 = '/ws/pop_ws.php'
+CEAZAMET_WS_2 = '/ws/davis/get_datos_scod.php'
+CEAZAMET_NETWORK_STATE_WS = '/ws/davis/estado_red_cmet.php'
+
+CEAZAMET_TIMEZONE = "America/Santiago"
+
 CEAZAMET_USER = os.environ.get('CEAZAMET_USER', 'anon@nohost.com')
 
-SLEEP_TIME = 5 * 60
+SLEEP_TIME = 3 * 60
 FORCE_RELOAD = False
 
 influxdb_client = None
@@ -34,23 +42,30 @@ sensors_to_register = [
     {'tf_nombre': u'Temperatura del Aire'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_ta'},
     {'tf_nombre': u'Velocidad de Viento'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_vv'},
     {'tf_nombre': u'Radiación Solar'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_rs'},
+    {'tf_nombre': u'Radiación Solar Difusa'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_rs_dif'},
+    {'tf_nombre': u'Radiación Solar Directa'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_rs_dir'},
+    {'tf_nombre': u'Radiación Solar Reflejada'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_rs_ref'},
     {'tf_nombre': u'Presión Atmosférica'.encode(encoding='UTF-8', errors='strict'), 'code': 'sensor_pa'}
 ]
 
+stations_by_minute = []
 
-def __generateURL(fn, options={}):
-    _url = CEAZAMET_WS + '?fn=' + fn
+
+def __generateURL(ws, fn, options={}):
+    _url = CEAZAMET_URL + ws + '?fn=' + fn
 
     if CEAZAMET_USER:
         options['user'] = CEAZAMET_USER
 
     _url += '&' + urllib.urlencode(options)
 
+    # print(_url)
+
     return _url
 
 
-def __getDataFrame(fn, options={}, header=0):
-    df = pd.read_csv(__generateURL(fn, options), header=header)
+def __getDataFrame(ws, fn, options={}, header=0):
+    df = pd.read_csv(__generateURL(ws, fn, options), header=header)
     if header is not None:
         df.columns = df.columns.str.replace("#", "")
     return df
@@ -70,7 +85,7 @@ def requestAllStations(options={}):
         return {'error': 'p_cod option is obligatory'}
 
     options['encabezado'] = 1
-    return __getDataFrame('GetListaEstaciones', options)
+    return __getDataFrame(CEAZAMET_WS_1, 'GetListaEstaciones', options)
 
 #   Get station sensors
 #
@@ -89,7 +104,7 @@ def requestStationSensors(options={}):
         return {'error': 'e_cod option is obligatory'}
 
     options['encabezado'] = 1
-    df = __getDataFrame('GetListaSensores', options, None)
+    df = __getDataFrame(CEAZAMET_WS_1, 'GetListaSensores', options, None)
     df.rename(
         columns={
             0: 'e_cod',
@@ -128,7 +143,7 @@ def requestSensorData(options={}):
         return {'error': 'fecha_fin option is obligatory'}
 
     options['encabezado'] = 1
-    df = __getDataFrame('GetSerieSensor', options, None)
+    df = __getDataFrame(CEAZAMET_WS_1, 'GetSerieSensor', options, None)
     df.rename(
         columns={
             0: 's_cod',
@@ -143,6 +158,39 @@ def requestSensorData(options={}):
     return df
 
 
+def requestSensorDataV2(options={}):
+    if 'node_id' not in options:
+        return {'error': 'node_id option is obligatory'}
+
+    if 's_cod' not in options:
+        return {'error': 's_cod option is obligatory'}
+
+    if 'fecha_inicio' not in options:
+        return {'error': 'fecha_inicio option is obligatory'}
+
+    if 'fecha_fin' not in options:
+        return {'error': 'fecha_fin option is obligatory'}
+
+    options['encabezado'] = 1
+
+    try:
+        df = __getDataFrame(CEAZAMET_WS_2, '', options, None)
+        df.rename(
+            columns={
+                0: 's_cod',
+                1: 'datetime',
+                2: 'min',
+                3: 'prom',
+                4: 'max'
+            },
+            inplace=True
+        )
+        return df
+    except Exception as e:
+        print(e)
+        return pd.DataFrame()
+
+
 def loadStationSensors(force=False):
     filename = 'stations-ceazamet'
     exists = os.path.isfile(filename)
@@ -154,7 +202,8 @@ def loadStationSensors(force=False):
         df_all_stations = requestAllStations({'p_cod': 'ceazamet', 'e_owner': 'ceaza'})
         for index_stations, row_stations in df_all_stations.iterrows():
             df_station_sensors = requestStationSensors({'p_cod': 'ceazamet', 'e_cod': row_stations['e_cod']})
-            timezone = tzwhere.tzwhere().tzNameAt(row_stations['e_lat'], row_stations['e_lon']) or "America/Santiago"
+            # timezone = tzwhere.tzwhere().tzNameAt(row_stations['e_lat'], row_stations['e_lon']) or "America/Santiago"
+            timezone = CEAZAMET_TIMEZONE
             for index_sensor, row_sensor in df_station_sensors.iterrows():
                 s = [x for x in sensors_to_register if x['tf_nombre'] == row_sensor['tf_nombre']]
                 if s:
@@ -186,7 +235,6 @@ def sendSensorData(obj_sensor_info, df_sensor_data):
                 {
                     "measurement": "ceazamet",
                     "tags": obj_sensor_info,
-                    #"time": int(datetime.datetime.now().strftime('%s')), 
                     "fields": {
                         "min": float(df_sensor_data['min'].values[0]),
                         "prom": float(df_sensor_data['prom'].values[0]),
@@ -201,14 +249,84 @@ def sendSensorData(obj_sensor_info, df_sensor_data):
         pass
 
 
-def getSensorData(sensor):
+def sendSensorDataV2(obj_sensor_info, df_sensor_data):
+    try:
+        influxdb_points = []
+        for index_data, row_data in df_sensor_data.iterrows():
+            df_station_sensors = requestStationSensors({'p_cod': 'ceazamet', 'e_cod': row_stations['e_cod']})
+            influxdb_points.append({
+                "measurement": "ceazamet",
+                "tags": obj_sensor_info,
+                "time": __convertDate(row_data['datetime']).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "fields": {
+                    "min": float(row_data['min']),
+                    "prom": float(row_data['prom']),
+                    "max": float(row_data['max'])
+                }
+            })
 
-    fecha_inicio = datetime.datetime.now(timezone(sensor['timezone'] or "America/Santiago")) - datetime.timedelta(minutes=59)
-    fecha_fin = datetime.datetime.now(timezone(sensor['timezone'] or "America/Santiago"))
-    sendSensorData(copy.deepcopy(sensor), requestSensorData(
-        {'s_cod': sensor['s_cod'], 'fecha_inicio': fecha_inicio.strftime(
-            "%Y-%m-%d %H:%M:%S"), 'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")}
-    ))
+        if influxdb_points:
+            print(influxdb_points)
+            influxdb_client.write_points(influxdb_points)
+    except Exception as e:
+        print(e)
+        pass
+
+
+def __getSensorDataByMinute(sensor):
+    fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=30)
+    fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) + datetime.timedelta(minutes=10)
+
+    return requestSensorDataV2({
+        'node_id': 'cmet_' + str(sensor['e_cod']),
+        's_cod': sensor['s_cod'],
+        'fecha_inicio': fecha_inicio.strftime("%Y-%m-%d %H:%M:%S"),
+        'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
+def __getSensorDataByHour(sensor):
+    fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=59)
+    fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE))
+    return requestSensorData({
+        's_cod': sensor['s_cod'],
+        'fecha_inicio': fecha_inicio.strftime("%Y-%m-%d %H:%M:%S"),
+        'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
+def getSensorData(sensor):
+    if stations_by_minute and str(sensor['e_cod']) in stations_by_minute:
+        sendSensorDataV2(copy.deepcopy(sensor), __getSensorDataByMinute(sensor))
+    else:
+        sendSensorData(copy.deepcopy(sensor), __getSensorDataByHour(sensor))
+
+    # fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=30)
+    # fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) + datetime.timedelta(minutes=10)
+    #
+    # sensor_data = requestSensorDataV2({
+    #     'node_id': 'cmet_' + str(sensor['e_cod']),
+    #     's_cod': sensor['s_cod'],
+    #     'fecha_inicio': fecha_inicio.strftime("%Y-%m-%d %H:%M:%S"),
+    #     'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")
+    # })
+    #
+    # if sensor_data.empty:
+    #     fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=59)
+    #     fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE))
+    #     sensor_data = requestSensorData({
+    #         's_cod': sensor['s_cod'],
+    #         'fecha_inicio': fecha_inicio.strftime("%Y-%m-%d %H:%M:%S"),
+    #         'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")
+    #     })
+    #     sendSensorData(copy.deepcopy(sensor), sensor_dat)
+    # else:
+    #     sendSensorDataV2(copy.deepcopy(sensor), sensor_dat)
+
+    # sendSensorData(copy.deepcopy(sensor), requestSensorData(
+    #     {'s_cod': sensor['s_cod'], 'fecha_inicio': fecha_inicio.strftime(
+    #         "%Y-%m-%d %H:%M:%S"), 'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")}
+    # ))
 
 
 def getAllSensorDatas(station_sensors):
@@ -222,11 +340,36 @@ def getAllSensorDatas(station_sensors):
             pass
 
 
+def __convertDate(date_time_str, timezone_from=CEAZAMET_TIMEZONE, timezone_to="UTC"):
+    date_time_obj = datetime.datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S')
+    timezone_date_time_obj = timezone(timezone_from).localize(date_time_obj)
+    return timezone_date_time_obj.astimezone(timezone(timezone_to))
+
+
+def __loadStationsByMinute():
+    try:
+        url = CEAZAMET_URL + CEAZAMET_NETWORK_STATE_WS
+        res = requests.get(url)
+
+        parser = etree.HTMLParser()
+        tree = etree.fromstring(res.content.replace('</tr>', '</tr><tr>'), parser)
+        results = tree.xpath('//tr/td[position()=3]')
+
+        for r in results:
+            if r.text.startswith('cmet_'):
+                stations_by_minute.append(r.text.replace('cmet_', ''))
+    except Exception as e:
+        print(e)
+
+
 def main():
+    __loadStationsByMinute()
+
+    print("Total Stations by Minute %s" % (len(stations_by_minute)))
 
     station_sensors = loadStationSensors(FORCE_RELOAD)
 
-    print("Total Sensors %s"%(len(station_sensors)))
+    print("Total Sensors %s" % (len(station_sensors)))
 
     while(True):
         # getAllSensorDatas(station_sensors)
