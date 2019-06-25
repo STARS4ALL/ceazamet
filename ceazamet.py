@@ -171,10 +171,8 @@ def requestSensorDataV2(options={}):
     if 'fecha_fin' not in options:
         return {'error': 'fecha_fin option is obligatory'}
 
-    options['encabezado'] = 1
-
     try:
-        df = __getDataFrame(CEAZAMET_WS_2, '', options, None)
+        df = pd.read_csv(__generateURL(CEAZAMET_WS_2, '', options), comment='#', header=None)
         df.rename(
             columns={
                 0: 's_cod',
@@ -253,7 +251,6 @@ def sendSensorDataV2(obj_sensor_info, df_sensor_data):
     try:
         influxdb_points = []
         for index_data, row_data in df_sensor_data.iterrows():
-            df_station_sensors = requestStationSensors({'p_cod': 'ceazamet', 'e_cod': row_stations['e_cod']})
             influxdb_points.append({
                 "measurement": "ceazamet",
                 "tags": obj_sensor_info,
@@ -300,33 +297,6 @@ def getSensorData(sensor):
         sendSensorDataV2(copy.deepcopy(sensor), __getSensorDataByMinute(sensor))
     else:
         sendSensorData(copy.deepcopy(sensor), __getSensorDataByHour(sensor))
-
-    # fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=30)
-    # fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) + datetime.timedelta(minutes=10)
-    #
-    # sensor_data = requestSensorDataV2({
-    #     'node_id': 'cmet_' + str(sensor['e_cod']),
-    #     's_cod': sensor['s_cod'],
-    #     'fecha_inicio': fecha_inicio.strftime("%Y-%m-%d %H:%M:%S"),
-    #     'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")
-    # })
-    #
-    # if sensor_data.empty:
-    #     fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=59)
-    #     fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE))
-    #     sensor_data = requestSensorData({
-    #         's_cod': sensor['s_cod'],
-    #         'fecha_inicio': fecha_inicio.strftime("%Y-%m-%d %H:%M:%S"),
-    #         'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")
-    #     })
-    #     sendSensorData(copy.deepcopy(sensor), sensor_dat)
-    # else:
-    #     sendSensorDataV2(copy.deepcopy(sensor), sensor_dat)
-
-    # sendSensorData(copy.deepcopy(sensor), requestSensorData(
-    #     {'s_cod': sensor['s_cod'], 'fecha_inicio': fecha_inicio.strftime(
-    #         "%Y-%m-%d %H:%M:%S"), 'fecha_fin': fecha_fin.strftime("%Y-%m-%d %H:%M:%S")}
-    # ))
 
 
 def getAllSensorDatas(station_sensors):
