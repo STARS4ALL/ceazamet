@@ -283,7 +283,7 @@ def sendSensorDataV2(obj_sensor_info, df_sensor_data):
 
 
 def __getSensorDataByMinute(sensor):
-    fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=30)
+    fecha_inicio = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) - datetime.timedelta(minutes=50)
     fecha_fin = datetime.datetime.now(timezone(CEAZAMET_TIMEZONE)) + datetime.timedelta(minutes=10)
 
     return requestSensorDataV2({
@@ -348,6 +348,8 @@ def __getStationsByMinute():
 
 
 def main():
+    global stations_by_minute
+
     stations_by_minute = __getStationsByMinute()
 
     print("Total Stations by Minute %s" % (len(stations_by_minute)))
