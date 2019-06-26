@@ -198,6 +198,16 @@ def loadStationSensors(force=False):
     else:
         station_sensors = []
         df_all_stations = requestAllStations({'p_cod': 'ceazamet', 'e_owner': 'ceaza'})
+
+        if df_all_stations[df_all_stations['e_cod'].str.contains('PTN')].empty:
+            df_all_stations = df_all_stations.append({
+                "e_cod": "PTN",
+                "e_nombre": "Patron",
+                "e_lat": -30.00000,
+                "e_lon": -70.00000,
+                "e_altitud": 0
+            }, ignore_index=True)
+
         for index_stations, row_stations in df_all_stations.iterrows():
             df_station_sensors = requestStationSensors({'p_cod': 'ceazamet', 'e_cod': row_stations['e_cod']})
             # timezone = tzwhere.tzwhere().tzNameAt(row_stations['e_lat'], row_stations['e_lon']) or "America/Santiago"
