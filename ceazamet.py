@@ -251,17 +251,19 @@ def sendSensorDataV2(obj_sensor_info, df_sensor_data):
     try:
         influxdb_points = []
         for index_data, row_data in df_sensor_data.iterrows():
-            influxdb_points.append({
-                "measurement": "ceazamet",
-                "tags": obj_sensor_info,
-                "time": __convertDate(row_data['datetime']).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                "fields": {
-                    "min": float(row_data['min']),
-                    "prom": float(row_data['prom']),
-                    "max": float(row_data['max'])
-                }
-            })
-
+            try:
+                influxdb_points.append({
+                    "measurement": "ceazamet",
+                    "tags": obj_sensor_info,
+                    "time": __convertDate(row_data['datetime']).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "fields": {
+                        "min": float(row_data['min']),
+                        "prom": float(row_data['prom']),
+                        "max": float(row_data['max'])
+                    }
+                })
+            except Exception as e:
+                print(e)
         if influxdb_points:
             print(influxdb_points)
             influxdb_client.write_points(influxdb_points)
@@ -316,24 +318,27 @@ def __convertDate(date_time_str, timezone_from=CEAZAMET_TIMEZONE, timezone_to="U
     return timezone_date_time_obj.astimezone(timezone(timezone_to))
 
 
-def __loadStationsByMinute():
-    try:
-        url = CEAZAMET_URL + CEAZAMET_NETWORK_STATE_WS
-        res = requests.get(url)
-
-        parser = etree.HTMLParser()
-        tree = etree.fromstring(res.content.replace('</tr>', '</tr><tr>'), parser)
-        results = tree.xpath('//tr/td[position()=3]')
-
-        for r in results:
-            if r.text.startswith('cmet_'):
-                stations_by_minute.append(r.text.replace('cmet_', ''))
-    except Exception as e:
-        print(e)
+def __getStationsByMinute():
+    stations = ["PTN", "8", "6", "PC", "MARPCH"]
+    # try:
+    #     url = CEAZAMET_URL + CEAZAMET_NETWORK_STATE_WS
+    #     res = requests.get(url)
+    #
+    #     parser = etree.HTMLParser()
+    #     tree = etree.fromstring(res.content.replace('</tr>', '</tr><tr>'), parser)
+    #     results = tree.xpath('//tr/td[position()=3]')
+    #
+    #     for r in results:
+    #         if r.text.startswith('cmet_'):
+    #             print(r.text.replace('cmet_', ''))
+    #             # stations.append(r.text.replace('cmet_', ''))
+    # except Exception as e:
+    #     print(e)
+    return stations
 
 
 def main():
-    __loadStationsByMinute()
+    stations_by_minute = __getStationsByMinute()
 
     print("Total Stations by Minute %s" % (len(stations_by_minute)))
 
