@@ -329,7 +329,7 @@ def __convertDate(date_time_str, timezone_from=CEAZAMET_TIMEZONE, timezone_to="U
 
 
 def __getStationsByMinute():
-    stations = ["PTN", "8", "6", "PC", "MARPCH"]
+    stations = ["8", "6", "PC", "MARPCH"]
     # try:
     #     url = CEAZAMET_URL + CEAZAMET_NETWORK_STATE_WS
     #     res = requests.get(url)
