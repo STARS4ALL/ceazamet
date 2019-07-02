@@ -204,8 +204,8 @@ def loadStationSensors(force=False):
                 "e_cod": "PTN",
                 "e_nombre": "Patron",
                 "e_lat": -30.00000,
-                "e_lon": -70.00000,
-                "e_altitud": 0
+                "e_lon": -70.00000
+                # "e_altitud": 0
             }, ignore_index=True)
 
         for index_stations, row_stations in df_all_stations.iterrows():
@@ -218,10 +218,10 @@ def loadStationSensors(force=False):
                     station_sensors.append({
                         'e_lat': row_stations['e_lat'],
                         'e_lon': row_stations['e_lon'],
-                        'e_altitud': row_stations['e_altitud'],
+                        # 'e_altitud': row_stations['e_altitud'],
                         'e_cod': row_stations['e_cod'],
                         'e_nombre': row_stations['e_nombre'],
-                        'e_cod_provincia': row_stations['e_cod_provincia'],
+                        # 'e_cod_provincia': row_stations['e_cod_provincia'],
                         's_cod': row_sensor['s_cod'],
                         'tf_nombre': row_sensor['tf_nombre'],
                         'um_notacion': row_sensor['um_notacion'],
